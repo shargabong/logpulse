@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" agent="logpulse" version="24.0.0">
+  <diagram id="logpulse-arch" name="LogPulse architecture">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Контейнер docker compose -->
+        <mxCell id="compose" value="docker compose (сеть logpulse_default)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeColor=#6c8ebf;fillColor=#dae8fc;opacity=30;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="20" width="980" height="420" as="geometry" />
+        </mxCell>
+
+        <!-- Клиент -->
+        <mxCell id="client" value="Клиент&#10;(curl / Swagger UI)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;strokeColor=#000000;fillColor=#f5f5f5;" vertex="1" parent="1">
+          <mxGeometry x="70" y="150" width="40" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- API -->
+        <mxCell id="api" value="api — FastAPI&#10;APIRouter, Pydantic&#10;REDIS_URL" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="260" y="150" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Redis Stream -->
+        <mxCell id="stream" value="Redis Stream&#10;logpulse:events&#10;XADD" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="520" y="140" width="160" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Worker -->
+        <mxCell id="worker" value="worker&#10;XREADGROUP / XACK&#10;consumer group&#10;logpulse-workers" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="760" y="150" width="180" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Redis Hash / Sorted Set -->
+        <mxCell id="stats" value="Redis Hash / Sorted Set&#10;logpulse:stats:level&#10;logpulse:stats:service&#10;logpulse:stats:status&#10;logpulse:slow&#10;HINCRBY / ZADD" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1000" y="120" width="180" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- Volume -->
+        <mxCell id="volume" value="volume: redis-data&#10;(AOF, данные переживают рестарт)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="520" y="300" width="200" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Стрелки -->
+        <mxCell id="e1" value="HTTP JSON&#10;/ingest" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="client" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="XADD" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="api" target="stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="XREADGROUP &#8594; XACK" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="stream" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="HINCRBY / ZADD" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;" edge="1" parent="1" source="worker" target="stats">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="HGETALL / ZREVRANGE (чтение статистики)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="api" target="stats">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="PING (/health)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="api" target="stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;dashed=1;" edge="1" parent="1" source="stats" target="volume">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Восстановление -->
+        <mxCell id="recovery" value="Восстановление после сбоя:&#10;redis перезапускается из volume redis-data (AOF)&#10;api/worker переподключаются с backoff, статистика сохраняется" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="220" y="480" width="980" height="80" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
