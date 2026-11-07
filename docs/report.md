@@ -164,7 +164,8 @@ Redis, а не хранится в памяти API.
 
 ```
 $ git log --graph --oneline --all --decorate
-* 9f7f714 (HEAD -> main) docs: README, архитектурная схема, отчёт и утилиты
+* d341d0f (HEAD -> main) chore: .dockerignore для сборки образов
+* 04da591 docs: README, архитектурная схема, отчёт и утилиты
 *   4783566 merge: Redis, воркер и API (feature/redis)
 |\
 | * 10ebfe6 (feature/redis) feat(worker): чтение Redis Streams и тесты API и статистики
