@@ -64,7 +64,7 @@
         </mxCell>
 
         <!-- Восстановление -->
-        <mxCell id="recovery" value="Восстановление после сбоя:&#10;redis перезапускается из volume redis-data (AOF)&#10;api/worker переподключаются с backoff, статистика сохраняется" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+        <mxCell id="recovery" value="Восстановление после сбоя:&#10;redis перезапускается из volume redis-data (AOF)&#10;api/worker переподключаются с паузой и повтором, статистика сохраняется" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
           <mxGeometry x="220" y="480" width="980" height="80" as="geometry" />
         </mxCell>
       </root>

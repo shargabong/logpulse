@@ -5,6 +5,7 @@ import pytest
 from app.parser import (
     IPV4_RE,
     PATH_RE,
+    PROBLEM_RE,
     RID_RE,
     TS_RE,
     ParseError,
@@ -123,6 +124,12 @@ def test_rid_regex():
 def test_path_regex():
     assert PATH_RE.fullmatch("/api/orders/42")
     assert not PATH_RE.fullmatch("api/orders")
+
+
+def test_problem_regex():
+    assert PROBLEM_RE.search(VALID_ERROR)
+    assert PROBLEM_RE.search(VALID_WARN)
+    assert not PROBLEM_RE.search(VALID_INFO)
 
 
 def test_find_problem_lines():

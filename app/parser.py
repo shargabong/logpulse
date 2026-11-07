@@ -39,54 +39,60 @@ METHODS = ("GET", "POST", "PUT", "DELETE")
 
 
 class ParseError(ValueError):
-    """Ошибка разбора строки с понятной причиной."""
+    """Ошибка разбора строки: причина и (если известно) номер строки."""
+
+    def __init__(self, reason, line=None):
+        self.reason = reason
+        self.line = line
+        text = reason if line is None else f"строка {line}: {reason}"
+        super().__init__(text)
 
 
-def parse_line(line):
+def parse_line(line, line_no=None):
     """Разобрать одну строку. Вернёт словарь или бросит ParseError."""
     line = line.rstrip("\r\n")
     if not line.strip():
-        raise ParseError("пустая строка")
+        raise ParseError("пустая строка", line_no)
 
     m = LOG_RE.fullmatch(line)
     if not m:
-        raise ParseError("строка не соответствует формату лога")
+        raise ParseError("строка не соответствует формату лога", line_no)
 
     d = m.groupdict()
 
     # timestamp проверяем отдельной маской и datetime
     if not TS_RE.fullmatch(d["timestamp"]):
-        raise ParseError("неверный timestamp: " + d["timestamp"])
+        raise ParseError("неверный timestamp: " + d["timestamp"], line_no)
     try:
         datetime.strptime(d["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
     except ValueError:
-        raise ParseError("timestamp не корректная дата: " + d["timestamp"])
+        raise ParseError("timestamp не корректная дата: " + d["timestamp"], line_no)
 
-    # IP проверяем отдельной маской и ipaddress
-    if not IPV4_RE.fullmatch(d["ip"]):
-        raise ParseError("неверный IP: " + d["ip"])
+    # IP проверяем через ipaddress, затем отдельной маской
     try:
         ipaddress.ip_address(d["ip"])
     except ValueError:
-        raise ParseError("неверный IP: " + d["ip"])
+        raise ParseError("неверный IP: " + d["ip"], line_no)
+    if not IPV4_RE.fullmatch(d["ip"]):
+        raise ParseError("неверный IP: " + d["ip"], line_no)
 
     if d["level"] not in LEVELS:
-        raise ParseError("недопустимый level: " + d["level"])
+        raise ParseError("недопустимый level: " + d["level"], line_no)
     if d["service"] not in SERVICES:
-        raise ParseError("недопустимый service: " + d["service"])
+        raise ParseError("недопустимый service: " + d["service"], line_no)
     if d["method"] not in METHODS:
-        raise ParseError("недопустимый method: " + d["method"])
+        raise ParseError("недопустимый method: " + d["method"], line_no)
 
     status = int(d["status"])
     if not 100 <= status <= 599:
-        raise ParseError("код ответа вне 100-599: " + str(status))
+        raise ParseError("код ответа вне 100-599: " + str(status), line_no)
 
     duration = int(d["duration_ms"])
     if not 0 <= duration <= 600000:
-        raise ParseError("длительность вне 0-600000: " + str(duration))
+        raise ParseError("длительность вне 0-600000: " + str(duration), line_no)
 
     if not RID_RE.fullmatch(d["rid"]):
-        raise ParseError("неверный rid: " + d["rid"])
+        raise ParseError("неверный rid: " + d["rid"], line_no)
 
     return {
         "timestamp": d["timestamp"],

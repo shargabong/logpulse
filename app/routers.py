@@ -38,9 +38,9 @@ def ingest(data: IngestRequest, r=Depends(get_redis)):
     errors = []
     for i, line in enumerate(data.lines, start=1):
         try:
-            event = parse_line(line)
+            event = parse_line(line, i)
         except ParseError as exc:
-            errors.append({"line": i, "reason": str(exc)})
+            errors.append({"line": i, "reason": exc.reason})
             continue
         try:
             r.xadd(STREAM_KEY, event)
