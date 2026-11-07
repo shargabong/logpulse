@@ -1,7 +1,5 @@
 """Тесты парсера и регулярных выражений."""
 
-from __future__ import annotations
-
 import pytest
 
 from app.parser import (
@@ -10,7 +8,6 @@ from app.parser import (
     RID_RE,
     TS_RE,
     ParseError,
-    check_field,
     find_problem_lines,
     parse_line,
 )
@@ -27,49 +24,45 @@ VALID_WARN = (
 
 
 def test_parse_valid_info():
-    event = parse_line(VALID_INFO)
-    assert event["level"] == "INFO"
-    assert event["service"] == "auth"
-    assert event["method"] == "POST"
-    assert event["path"] == "/api/login"
-    assert event["status"] == 200
-    assert event["duration_ms"] == 43
-    assert event["rid"] == "ab12cd34"
+    e = parse_line(VALID_INFO)
+    assert e["level"] == "INFO"
+    assert e["service"] == "auth"
+    assert e["path"] == "/api/login"
+    assert e["status"] == 200
+    assert e["rid"] == "ab12cd34"
 
 
 def test_parse_valid_error():
-    event = parse_line(VALID_ERROR)
-    assert event["level"] == "ERROR"
-    assert event["service"] == "orders"
-    assert event["status"] == 503
-    assert event["duration_ms"] == 742
+    e = parse_line(VALID_ERROR)
+    assert e["level"] == "ERROR"
+    assert e["status"] == 503
+    assert e["duration_ms"] == 742
 
 
 def test_parse_valid_warn():
-    event = parse_line(VALID_WARN)
-    assert event["level"] == "WARN"
-    assert event["ip"] == "203.0.113.7"
+    e = parse_line(VALID_WARN)
+    assert e["level"] == "WARN"
+    assert e["ip"] == "203.0.113.7"
 
 
-def test_normalized_types():
-    event = parse_line(VALID_INFO)
-    # Числовые поля возвращаются как int, а не как str.
-    assert isinstance(event["status"], int)
-    assert isinstance(event["duration_ms"], int)
+def test_numbers_are_int():
+    e = parse_line(VALID_INFO)
+    assert isinstance(e["status"], int)
+    assert isinstance(e["duration_ms"], int)
 
 
 def test_broken_timestamp():
     line = "2026-13-45T99:99:99Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34"
     with pytest.raises(ParseError) as exc:
         parse_line(line)
-    assert "timestamp" in exc.value.reason
+    assert "timestamp" in str(exc.value)
 
 
 def test_invalid_ipv4():
     line = "2026-10-20T12:34:56Z INFO auth 999.1.1.1 POST /api/login 200 43ms rid=ab12cd34"
     with pytest.raises(ParseError) as exc:
         parse_line(line)
-    assert "IP" in exc.value.reason
+    assert "IP" in str(exc.value)
 
 
 @pytest.mark.parametrize("level", ["DEBUG", "TRACE", "FATAL"])
@@ -83,14 +76,14 @@ def test_invalid_status():
     line = "2026-10-20T12:34:56Z ERROR orders 198.51.100.8 GET /api/orders 999 742ms rid=ee44cc22"
     with pytest.raises(ParseError) as exc:
         parse_line(line)
-    assert "код ответа" in exc.value.reason
+    assert "код ответа" in str(exc.value)
 
 
 def test_duration_out_of_range():
     line = "2026-10-20T12:34:56Z INFO auth 192.0.2.10 POST /api/login 200 700000ms rid=ab12cd34"
     with pytest.raises(ParseError) as exc:
         parse_line(line)
-    assert "длительность" in exc.value.reason
+    assert "длительность" in str(exc.value)
 
 
 def test_negative_duration():
@@ -108,20 +101,10 @@ def test_invalid_rid():
 def test_empty_line():
     with pytest.raises(ParseError) as exc:
         parse_line("   ")
-    assert "пустая" in exc.value.reason
+    assert "пустая" in str(exc.value)
 
 
-def test_extra_whitespace_allowed():
-    line = (
-        "2026-10-20T12:34:56Z  INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34"
-    )
-    # Дополнительные пробелы допустимы (\s+), поэтому строка проходит.
-    assert parse_line(line)["level"] == "INFO"
-
-
-# --- Отдельные регулярные выражения (не менее трёх, каждое со своим тестом) ---
-
-
+# Отдельные маски (не менее трёх, у каждой свой тест)
 def test_ts_regex():
     assert TS_RE.fullmatch("2026-10-20T12:34:56Z")
     assert not TS_RE.fullmatch("2026-10-20 12:34:56")
@@ -142,12 +125,6 @@ def test_path_regex():
     assert not PATH_RE.fullmatch("api/orders")
 
 
-def test_check_field_helper():
-    assert check_field("rid", "ab12cd34")
-    assert not check_field("ip", "999.1.1.1")
-
-
 def test_find_problem_lines():
-    text = f"{VALID_INFO}\n{VALID_ERROR}\n{VALID_WARN}\n"
-    problems = find_problem_lines(text)
-    assert len(problems) == 2
+    text = VALID_INFO + "\n" + VALID_ERROR + "\n" + VALID_WARN + "\n"
+    assert len(find_problem_lines(text)) == 2

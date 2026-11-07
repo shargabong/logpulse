@@ -1,15 +1,6 @@
-"""Тесты накопления статистики и идемпотентности обновления."""
+"""Тесты накопления статистики в Redis."""
 
-from __future__ import annotations
-
-import asyncio
-
-from app.config import get_settings
-from app.stats import apply_event, read_stats
-
-
-def run(coro):
-    return asyncio.run(coro)
+from app.stats import read_stats, to_event, update_stats
 
 
 def make_event(level="INFO", service="auth", status=200, duration_ms=100, rid="a0000001"):
@@ -26,68 +17,53 @@ def make_event(level="INFO", service="auth", status=200, duration_ms=100, rid="a
     }
 
 
-def test_counters_accumulate(fake_redis):
-    async def scenario():
-        settings = get_settings()
-        await apply_event(fake_redis, make_event(level="INFO"), "1-0", settings)
-        await apply_event(fake_redis, make_event(level="INFO"), "2-0", settings)
-        await apply_event(fake_redis, make_event(level="ERROR", status=500), "3-0", settings)
-        data = await read_stats(fake_redis, settings)
-        assert data["total"] == 3
-        assert data["by_level"]["INFO"] == 2
-        assert data["by_level"]["ERROR"] == 1
-        assert data["by_status"]["500"] == 1
+def test_to_event_makes_numbers():
+    fields = {
+        "timestamp": "2026-10-20T12:00:00Z",
+        "level": "INFO",
+        "service": "auth",
+        "ip": "192.0.2.10",
+        "method": "GET",
+        "path": "/api/x",
+        "status": "200",
+        "duration_ms": "43",
+        "rid": "ab12cd34",
+    }
+    e = to_event(fields)
+    assert e["status"] == 200
+    assert e["duration_ms"] == 43
 
-    run(scenario())
+
+def test_counters_accumulate(fake_redis):
+    update_stats(fake_redis, make_event(level="INFO"))
+    update_stats(fake_redis, make_event(level="INFO"))
+    update_stats(fake_redis, make_event(level="ERROR", status=500))
+    data = read_stats(fake_redis)
+    assert data["total"] == 3
+    assert data["by_level"]["INFO"] == 2
+    assert data["by_level"]["ERROR"] == 1
+    assert data["by_status"]["500"] == 1
 
 
 def test_counts_by_service(fake_redis):
-    async def scenario():
-        settings = get_settings()
-        await apply_event(fake_redis, make_event(service="auth"), "1-0", settings)
-        await apply_event(fake_redis, make_event(service="orders"), "2-0", settings)
-        await apply_event(fake_redis, make_event(service="orders"), "3-0", settings)
-        data = await read_stats(fake_redis, settings)
-        assert data["by_service"]["orders"] == 2
-        assert data["by_service"]["auth"] == 1
-
-    run(scenario())
+    update_stats(fake_redis, make_event(service="auth"))
+    update_stats(fake_redis, make_event(service="orders"))
+    update_stats(fake_redis, make_event(service="orders"))
+    data = read_stats(fake_redis)
+    assert data["by_service"]["orders"] == 2
+    assert data["by_service"]["auth"] == 1
 
 
 def test_top_slow_sorted(fake_redis):
-    async def scenario():
-        settings = get_settings()
-        await apply_event(fake_redis, make_event(duration_ms=700, rid="a0000001"), "1-0", settings)
-        await apply_event(fake_redis, make_event(duration_ms=1200, rid="b0000002"), "2-0", settings)
-        await apply_event(fake_redis, make_event(duration_ms=900, rid="c0000003"), "3-0", settings)
-        data = await read_stats(fake_redis, settings)
-        durations = [item["duration_ms"] for item in data["top_slow"]]
-        assert durations == [1200, 900, 700]
-        assert data["top_slow"][0]["rid"] == "b0000002"
-
-    run(scenario())
+    update_stats(fake_redis, make_event(duration_ms=700, rid="a0000001"))
+    update_stats(fake_redis, make_event(duration_ms=1200, rid="b0000002"))
+    update_stats(fake_redis, make_event(duration_ms=900, rid="c0000003"))
+    data = read_stats(fake_redis)
+    assert [x["duration_ms"] for x in data["top_slow"]] == [1200, 900, 700]
+    assert data["top_slow"][0]["rid"] == "b0000002"
 
 
 def test_slow_threshold(fake_redis):
-    async def scenario():
-        settings = get_settings()
-        # Ниже порога (500 мс) в рейтинг не попадает.
-        await apply_event(fake_redis, make_event(duration_ms=499, rid="a0000001"), "1-0", settings)
-        data = await read_stats(fake_redis, settings)
-        assert data["top_slow"] == []
-
-    run(scenario())
-
-
-def test_idempotent_redelivery(fake_redis):
-    async def scenario():
-        settings = get_settings()
-        first = await apply_event(fake_redis, make_event(), "1-0", settings)
-        second = await apply_event(fake_redis, make_event(), "1-0", settings)
-        data = await read_stats(fake_redis, settings)
-        assert first is True
-        assert second is False
-        # Повторная доставка не удвоила счётчики.
-        assert data["total"] == 1
-
-    run(scenario())
+    # 499 мс ниже порога 500 -> в рейтинг не попадает
+    update_stats(fake_redis, make_event(duration_ms=499, rid="a0000001"))
+    assert read_stats(fake_redis)["top_slow"] == []

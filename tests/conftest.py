@@ -1,24 +1,20 @@
-"""Общие фикстуры для тестов API."""
+"""Общие фикстуры: подменяем Redis на fakeredis, данные проекта не трогаем."""
 
-from __future__ import annotations
-
+import fakeredis
 import pytest
-from fakeredis import aioredis as fakeredis_aioredis
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_redis
 from app.main import app
+from app.redis_client import get_redis
 
 
 @pytest.fixture
 def fake_redis():
-    """Изолированный Redis на время теста (реальные данные не трогаем)."""
-    return fakeredis_aioredis.FakeRedis(decode_responses=True)
+    return fakeredis.FakeRedis(decode_responses=True)
 
 
 @pytest.fixture
 def client(fake_redis):
-    """TestClient с подменённой зависимостью Redis."""
     app.dependency_overrides[get_redis] = lambda: fake_redis
     with TestClient(app) as test_client:
         yield test_client

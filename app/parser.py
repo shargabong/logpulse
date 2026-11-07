@@ -1,33 +1,18 @@
-"""Парсер строк сервисного лога.
+"""Разбор строк логов.
 
-Формат строки строго фиксирован:
-
-    <UTC ISO-8601 с Z> <LEVEL> <service> <IPv4> <METHOD> <path> <status> <N>ms rid=<8 hex>
+Формат строки:
+    <UTC ISO-8601 Z> <LEVEL> <service> <IPv4> <METHOD> <path> <status> <N>ms rid=<8 hex>
 
 Пример:
-
     2026-10-20T12:34:56Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34
-
-Основной разбор делает одна регулярная маска с именованными группами и
-полным сопоставлением строки (``re.fullmatch``). Дополнительно применяются
-отдельные выражения для проверки отдельных полей (см. ``_FIELD_RE``).
-
-После сопоставления поля проверяются уже типами Python:
-timestamp через ``datetime``, IP через ``ipaddress``, а числовые поля — по
-допустимым диапазонам.
 """
-
-from __future__ import annotations
 
 import ipaddress
 import re
 from datetime import datetime
 
-# --- Основная маска -------------------------------------------------------
-#
-# Именованные группы: timestamp, level, service, ip, method, path,
-# status, duration_ms, rid. Полное сопоставление строки.
-LOG_PATTERN = re.compile(
+# Основная маска с именованными группами. Разбираем строку целиком (fullmatch).
+LOG_RE = re.compile(
     r"(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s+"
     r"(?P<level>INFO|WARN|ERROR)\s+"
     r"(?P<service>auth|orders|payment)\s+"
@@ -39,138 +24,83 @@ LOG_PATTERN = re.compile(
     r"rid=(?P<rid>[0-9a-f]{8})"
 )
 
-# --- Отдельные выражения для проверки/поиска полей ------------------------
-#
-# Каждое выражение снабжено отдельным тестом (tests/test_parser.py).
+# Отдельные маски для проверки полей (у каждой свой тест).
 TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 IPV4_RE = re.compile(
-    r"^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
-    r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$"
+    r"^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$"
 )
 RID_RE = re.compile(r"^[0-9a-f]{8}$")
 PATH_RE = re.compile(r"^/[A-Za-z0-9._~/{}\-]*$")
-# Поиск потенциально проблемных строк в логе.
 PROBLEM_RE = re.compile(r"\b(?:ERROR|WARN)\b")
 
-_FIELD_RE = {
-    "timestamp": TS_RE,
-    "ip": IPV4_RE,
-    "rid": RID_RE,
-    "path": PATH_RE,
-}
-
-ALLOWED_LEVELS = frozenset({"INFO", "WARN", "ERROR"})
-ALLOWED_SERVICES = frozenset({"auth", "orders", "payment"})
-ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "DELETE"})
-
-STATUS_MIN, STATUS_MAX = 100, 599
-DURATION_MIN, DURATION_MAX = 0, 600_000
-
-_TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+LEVELS = ("INFO", "WARN", "ERROR")
+SERVICES = ("auth", "orders", "payment")
+METHODS = ("GET", "POST", "PUT", "DELETE")
 
 
 class ParseError(ValueError):
-    """Ошибка разбора строки лога с понятной причиной."""
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
+    """Ошибка разбора строки с понятной причиной."""
 
 
-def check_field(field: str, value: str) -> bool:
-    """Проверить одно поле отдельным регулярным выражением."""
-    pattern = _FIELD_RE.get(field)
-    if pattern is None:
-        raise KeyError(f"нет отдельного выражения для поля {field!r}")
-    return pattern.fullmatch(value) is not None
-
-
-def find_problem_lines(text: str) -> list[str]:
-    """Вернуть строки, содержащие WARN/ERROR (поиск паттерна в логе)."""
-    return [line for line in text.splitlines() if PROBLEM_RE.search(line)]
-
-
-def parse_line(line: str, line_no: int | None = None) -> dict:
-    """Разобрать одну строку лога.
-
-    Возвращает нормализованный словарь с типизированными значениями.
-    При любой проблеме поднимает :class:`ParseError` с причиной.
-    """
-    raw = line.rstrip("\r\n")
-    if not raw.strip():
+def parse_line(line):
+    """Разобрать одну строку. Вернёт словарь или бросит ParseError."""
+    line = line.rstrip("\r\n")
+    if not line.strip():
         raise ParseError("пустая строка")
 
-    match = LOG_PATTERN.fullmatch(raw)
-    if match is None:
+    m = LOG_RE.fullmatch(line)
+    if not m:
         raise ParseError("строка не соответствует формату лога")
 
-    data = match.groupdict()
+    d = m.groupdict()
 
-    _validate_timestamp(data["timestamp"])
-    _validate_ip(data["ip"])
-    level = _validate_choice("level", data["level"], ALLOWED_LEVELS)
-    service = _validate_choice("service", data["service"], ALLOWED_SERVICES)
-    method = _validate_choice("method", data["method"], ALLOWED_METHODS)
-    status = _validate_status(data["status"])
-    duration_ms = _validate_duration(data["duration_ms"])
-    rid = _validate_rid(data["rid"])
+    # timestamp проверяем отдельной маской и datetime
+    if not TS_RE.fullmatch(d["timestamp"]):
+        raise ParseError("неверный timestamp: " + d["timestamp"])
+    try:
+        datetime.strptime(d["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        raise ParseError("timestamp не корректная дата: " + d["timestamp"])
+
+    # IP проверяем отдельной маской и ipaddress
+    if not IPV4_RE.fullmatch(d["ip"]):
+        raise ParseError("неверный IP: " + d["ip"])
+    try:
+        ipaddress.ip_address(d["ip"])
+    except ValueError:
+        raise ParseError("неверный IP: " + d["ip"])
+
+    if d["level"] not in LEVELS:
+        raise ParseError("недопустимый level: " + d["level"])
+    if d["service"] not in SERVICES:
+        raise ParseError("недопустимый service: " + d["service"])
+    if d["method"] not in METHODS:
+        raise ParseError("недопустимый method: " + d["method"])
+
+    status = int(d["status"])
+    if not 100 <= status <= 599:
+        raise ParseError("код ответа вне 100-599: " + str(status))
+
+    duration = int(d["duration_ms"])
+    if not 0 <= duration <= 600000:
+        raise ParseError("длительность вне 0-600000: " + str(duration))
+
+    if not RID_RE.fullmatch(d["rid"]):
+        raise ParseError("неверный rid: " + d["rid"])
 
     return {
-        "timestamp": data["timestamp"],
-        "level": level,
-        "service": service,
-        "ip": data["ip"],
-        "method": method,
-        "path": data["path"],
+        "timestamp": d["timestamp"],
+        "level": d["level"],
+        "service": d["service"],
+        "ip": d["ip"],
+        "method": d["method"],
+        "path": d["path"],
         "status": status,
-        "duration_ms": duration_ms,
-        "rid": rid,
+        "duration_ms": duration,
+        "rid": d["rid"],
     }
 
 
-def _validate_timestamp(value: str) -> None:
-    if not TS_RE.fullmatch(value):
-        raise ParseError(f"неверный timestamp: {value!r}")
-    try:
-        datetime.strptime(value, _TS_FORMAT)
-    except ValueError:
-        raise ParseError(f"timestamp не является корректной датой: {value!r}")
-
-
-def _validate_ip(value: str) -> None:
-    try:
-        ip = ipaddress.ip_address(value)
-    except ValueError:
-        raise ParseError(f"неверный IP-адрес: {value!r}")
-    if ip.version != 4:
-        raise ParseError(f"IP-адрес не является IPv4: {value!r}")
-
-
-def _validate_choice(field: str, value: str, allowed: frozenset) -> str:
-    if value not in allowed:
-        raise ParseError(f"недопустимое значение {field}: {value!r}")
-    return value
-
-
-def _validate_status(value: str) -> int:
-    status = int(value)
-    if not STATUS_MIN <= status <= STATUS_MAX:
-        raise ParseError(
-            f"код ответа вне диапазона {STATUS_MIN}-{STATUS_MAX}: {status}"
-        )
-    return status
-
-
-def _validate_duration(value: str) -> int:
-    duration = int(value)
-    if not DURATION_MIN <= duration <= DURATION_MAX:
-        raise ParseError(
-            f"длительность вне диапазона {DURATION_MIN}-{DURATION_MAX} мс: {duration}"
-        )
-    return duration
-
-
-def _validate_rid(value: str) -> str:
-    if not RID_RE.fullmatch(value):
-        raise ParseError(f"неверный rid (нужно 8 hex-символов): {value!r}")
-    return value
+def find_problem_lines(text):
+    """Вернуть строки лога, где есть WARN или ERROR (поиск по маске)."""
+    return [line for line in text.splitlines() if PROBLEM_RE.search(line)]

@@ -1,144 +1,121 @@
 # LogPulse
 
-Небольшая система для приёма и разбора сервисных логов. Принимает строки
-логов по HTTP, проверяет их регулярными выражениями, складывает корректные
-события в Redis Stream, а отдельный воркер разбирает их и накапливает
-статистику в Redis. Всё поднимается одним `docker compose`.
+Система для приёма и разбора логов сервисов. Принимает строки логов по HTTP,
+проверяет их регулярками, валидные события кладёт в Redis Stream, отдельный
+воркер их читает и считает статистику. Всё запускается одним docker compose.
 
-## Архитектура
+## Как устроено
 
-Клиент -> API (FastAPI) -> Redis Stream (`logpulse:events`) -> Worker ->
-Redis (Hash + Sorted Set). API также читает агрегаты из Redis для `/stats`.
+Клиент -> API (FastAPI) -> Redis Stream (logpulse:events) -> worker ->
+Redis (Hash + Sorted Set). API ещё сам читает готовую статистику из Redis для /stats.
 
 ![Архитектура](docs/architecture.png)
 
-Редактируемый исходник схемы: [`architecture.drawio`](architecture.drawio)
-(открывается в https://app.diagrams.net/).
+Схема в редактируемом виде: architecture.drawio (открывается на https://app.diagrams.net/).
 
-## Состав компонентов
+## Файлы
 
-| Компонент | Каталог | Назначение |
-| --- | --- | --- |
-| API | `app/` | FastAPI: `/health`, `/ingest`, `/stats`, `/events`. Парсер и слой Redis. |
-| Парсер | `app/parser.py` | Разбор строки одной регуляркой с именованными группами + отдельные проверки полей. |
-| Worker | `worker/worker.py` | Читает поток через `XREADGROUP`, обновляет статистику, подтверждает через `XACK`. |
-| Данные | `data/sample.log` | 45 корректных строк и 6 намеренно испорченных. |
-| Тесты | `tests/` | 37 тестов pytest. |
-| Инфраструктура | `Dockerfile`, `compose.yaml`, `.env.example` | Три сервиса: `api`, `worker`, `redis`. |
+- app/parser.py - разбор строки логов регуляркой
+- app/routers.py - маршруты /health, /ingest, /stats, /events
+- app/models.py - Pydantic-модели
+- app/stats.py - обновление и чтение статистики в Redis
+- app/redis_client.py - клиент Redis и зависимость для FastAPI
+- app/config.py - настройки и ключи
+- worker.py - фоновый воркер
+- data/sample.log - тестовые данные
+- tests/ - тесты pytest
 
-## Запуск через Docker Compose
+## Запуск
 
 ```bash
-cp .env.example .env            # при необходимости поправьте значения
+cp .env.example .env
 docker compose up --build -d
 docker compose ps
 docker compose logs --tail=50 api worker redis
 ```
 
-API поднимется на `127.0.0.1:8000` (порт можно изменить через `API_PORT`).
-Swagger UI: http://127.0.0.1:8000/docs
+API: http://127.0.0.1:8000, Swagger: http://127.0.0.1:8000/docs
 
-Если порт 8000 занят, например другим проектом:
+Если порт 8000 занят, можно поднять на другом:
 
 ```bash
 API_PORT=8080 docker compose up --build -d
 ```
 
-Остановить (данные сохраняются в volume `redis-data`):
+Остановка (данные остаются в volume redis-data):
 
 ```bash
 docker compose down
 ```
 
-> `docker compose down -v` удаляет volume вместе с данными. Не используйте его,
-> если проверяете сохранность статистики.
+Команда `docker compose down -v` удаляет volume вместе с данными, для проверки
+сохранности её использовать нельзя.
 
-## Локальный запуск без Docker
+Без Docker:
 
 ```bash
 python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements-dev.txt   # Windows
-export REDIS_URL=redis://localhost:6379/0
-
-uvicorn app.main:app --reload
-python -m worker.worker        # в отдельном терминале
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+uvicorn app.main:app --reload      # терминал 1
+python worker.py                   # терминал 2
 ```
 
-## Примеры запросов
+## Запросы
 
-Проверка доступности:
+Проверка:
 
 ```bash
 curl http://127.0.0.1:8000/health
-# {"status":"ok","redis":"ok"}
 ```
 
-Приём пакета строк (3 корректные + 2 ошибочные):
+Приём строк:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"lines":[
-    "2026-10-20T12:34:56Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34",
-    "2026-10-20T12:34:58Z ERROR orders 198.51.100.8 GET /api/orders 503 742ms rid=ee44cc22",
-    "2026-10-20T12:35:01Z WARN payment 203.0.113.7 POST /api/pay 429 301ms rid=ff44aa33",
-    "2026-10-20T12:35:04Z ERROR orders 198.51.100.8 GET /api/orders 999 100ms rid=aa11bb22",
-    "2026-10-20T12:35:07Z INFO auth 999.1.1.1 POST /api/login 200 43ms rid=cc33dd44"
-  ]}'
+curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d "{\"lines\":[\"2026-10-20T12:34:56Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34\"]}"
 ```
 
-Ответ: `accepted=3`, `rejected=2` и пояснения по двум ошибкам.
-
-Статистика и последние события:
+Статистика и события:
 
 ```bash
 curl http://127.0.0.1:8000/stats
 curl "http://127.0.0.1:8000/events?limit=3"
 ```
 
-Полностью сквозной сценарий: `python tools/smoke.py`.
+Полный прогон по sample.log: `python tools/smoke.py`.
 
-## Структуры Redis
+## Что хранится в Redis
 
-| Ключ | Тип | Запись | Чтение | Назначение |
-| --- | --- | --- | --- | --- |
-| `logpulse:events` | Stream | `XADD` | `XREADGROUP`, `XREVRANGE` | Очередь событий |
-| `logpulse:stats:level` | Hash | `HINCRBY` | `HGETALL` | Счётчики уровней |
-| `logpulse:stats:service` | Hash | `HINCRBY` | `HGETALL` | Счётчики сервисов |
-| `logpulse:stats:status` | Hash | `HINCRBY` | `HGETALL` | Счётчики HTTP-кодов |
-| `logpulse:slow` | Sorted Set | `ZADD` | `ZREVRANGE` | ТОП медленных запросов |
-| `logpulse:processed` | Set | `SADD` | `SISMEMBER` | Идемпотентность повторной доставки |
+| Ключ | Тип | Запись | Чтение |
+| --- | --- | --- | --- |
+| logpulse:events | Stream | XADD | XREADGROUP, XREVRANGE |
+| logpulse:stats:level | Hash | HINCRBY | HGETALL |
+| logpulse:stats:service | Hash | HINCRBY | HGETALL |
+| logpulse:stats:status | Hash | HINCRBY | HGETALL |
+| logpulse:slow | Sorted Set | ZADD | ZREVRANGE |
 
-Порог медленного запроса: `duration_ms >= 500` (`SLOW_THRESHOLD_MS`).
+Медленным считается запрос с duration_ms >= 500 (меняется через SLOW_THRESHOLD_MS).
 
-## Pydantic-модели
+## Модели Pydantic
 
-- `IngestRequest` — `lines`: от 1 до 100 строк, каждая длиной 1-500 символов.
-- `IngestResponse` — `accepted`, `rejected`, `errors[]` (номер строки и причина).
-- `StatsResponse` — `total`, `by_level`, `by_service`, `by_status`, `top_slow[]`.
-- `EventsResponse` — `count`, `events[]`.
-- `HealthResponse` — `status`, `redis`.
-- `ErrorResponse` — единый формат ошибок: `{"error": {"type", "message", "details"}}`.
+- IngestRequest - lines, от 1 до 100 строк, каждая 1-500 символов
+- IngestResponse - accepted, rejected, errors
+- StatsResponse - total, by_level, by_service, by_status, top_slow
+- EventsResponse - count, events
+- ErrorResponse - единый формат ошибок {"error": {"type", "message", "details"}}
 
-Ошибки: `422` при неверной структуре запроса, `503` при недоступности Redis.
-Трассировки и секреты наружу не отдаются.
+Ошибки: 422 если неверная структура запроса, 503 если Redis недоступен.
 
 ## Тесты
 
 ```bash
-pytest -q                                   # локально
-docker compose exec api pytest -q           # внутри контейнера
+pytest -q
+docker compose exec api pytest -q
 ```
 
-Redis-зависимость подменяется через `app.dependency_overrides`, поэтому тесты
-не портят рабочие данные.
+В тестах Redis подменяется на fakeredis, рабочие данные не портятся.
 
 ## Ограничения
 
-- Идемпотентность обеспечивается множеством `logpulse:processed`: при большом
-  потоке оно растёт. Для продакшена стоит ограничивать его по времени (`EXPIRE`)
-  или перейти на дедупликацию по бизнес-ключу.
-- При полном удалении DNS-имени сервиса `redis` (команда `stop`, а не
-  `restart`) в логах API появляется косметический `Future exception was never
-  retrieved` от redis-py. На работу не влияет: клиент переподключается.
-- Воркер читает по одной группе потребителей без претензий на шардирование.
+- Если одно и то же сообщение придёт воркеру дважды, счётчики могут
+  увеличиться дважды. В задании такие дубликаты допускаются как ограничение.
+- Воркер один, шардирования нет.

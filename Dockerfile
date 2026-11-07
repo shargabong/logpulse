@@ -11,7 +11,7 @@ COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
 COPY app ./app
-COPY worker ./worker
+COPY worker.py ./
 COPY data ./data
 COPY tests ./tests
 COPY pytest.ini ./

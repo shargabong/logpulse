@@ -1,45 +1,31 @@
-"""Pydantic-модели запросов и ответов HTTP API."""
+"""Модели запросов и ответов (Pydantic)."""
 
-from __future__ import annotations
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-LINE_MIN, LINE_MAX = 1, 500
-LINES_MIN, LINES_MAX = 1, 100
+from pydantic import BaseModel, Field, field_validator
 
 
 class IngestRequest(BaseModel):
-    """Запрос на приём пакета строк лога."""
+    """Тело запроса POST /ingest: от 1 до 100 строк, каждая 1-500 символов."""
 
-    model_config = ConfigDict(extra="forbid")
-
-    lines: list[str] = Field(
-        ...,
-        min_length=LINES_MIN,
-        max_length=LINES_MAX,
-        description="От 1 до 100 строк лога, каждая длиной 1-500 символов",
-    )
+    lines: list[str] = Field(..., min_length=1, max_length=100)
 
     @field_validator("lines")
     @classmethod
-    def _check_line_lengths(cls, value: list[str]) -> list[str]:
-        for index, line in enumerate(value, start=1):
-            if not LINE_MIN <= len(line) <= LINE_MAX:
-                raise ValueError(
-                    f"строка {index}: длина должна быть {LINE_MIN}-{LINE_MAX} символов"
-                )
+    def check_line_length(cls, value):
+        for i, line in enumerate(value, start=1):
+            if not 1 <= len(line) <= 500:
+                raise ValueError(f"строка {i}: длина должна быть 1-500 символов")
         return value
 
 
 class ParseErrorItem(BaseModel):
-    """Ошибка разбора одной строки с номером и причиной."""
+    """Ошибка разбора одной строки."""
 
-    line: int = Field(..., description="Номер строки в пакете, начиная с 1")
-    reason: str = Field(..., description="Причина отклонения")
+    line: int
+    reason: str
 
 
 class IngestResponse(BaseModel):
-    """Результат приёма пакета строк."""
+    """Ответ POST /ingest."""
 
     accepted: int
     rejected: int
@@ -47,16 +33,16 @@ class IngestResponse(BaseModel):
 
 
 class SlowRequest(BaseModel):
-    """Одна запись из рейтинга медленных запросов."""
+    """Строка рейтинга медленных запросов."""
 
     rid: str
     duration_ms: int
 
 
 class StatsResponse(BaseModel):
-    """Агрегированная статистика, собранная воркером в Redis."""
+    """Ответ GET /stats."""
 
-    total: int = Field(..., description="Всего обработанных worker событий")
+    total: int
     by_level: dict[str, int]
     by_service: dict[str, int]
     by_status: dict[str, int]
@@ -64,7 +50,7 @@ class StatsResponse(BaseModel):
 
 
 class EventItem(BaseModel):
-    """Запись события из Redis Stream."""
+    """Одно событие из Redis Stream."""
 
     id: str
     timestamp: str
@@ -79,21 +65,21 @@ class EventItem(BaseModel):
 
 
 class EventsResponse(BaseModel):
-    """Последние события из очереди."""
+    """Ответ GET /events."""
 
     count: int
     events: list[EventItem]
 
 
 class HealthResponse(BaseModel):
-    """Признак доступности приложения и Redis."""
+    """Ответ GET /health."""
 
     status: str
     redis: str
 
 
 class ErrorBody(BaseModel):
-    """Тело ошибки в едином формате."""
+    """Тело ошибки."""
 
     type: str
     message: str
@@ -101,6 +87,6 @@ class ErrorBody(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Единый формат ошибок API."""
+    """Единый формат ошибок."""
 
     error: ErrorBody

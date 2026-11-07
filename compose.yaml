@@ -45,7 +45,7 @@ services:
       LOGPULSE_STREAM: logpulse:events
       LOGPULSE_GROUP: logpulse-workers
       SLOW_THRESHOLD_MS: "500"
-    command: ["python", "-m", "worker.worker"]
+    command: ["python", "worker.py"]
     depends_on:
       redis:
         condition: service_healthy
