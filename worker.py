@@ -41,7 +41,9 @@ def main():
         REDIS_URL,
         decode_responses=True,
         socket_connect_timeout=2,
-        socket_timeout=2,
+        # таймаут сокета больше времени блокировки xreadgroup (block=2000 мс),
+        # иначе пустой поток рвётся по таймауту и летит ложная ошибка связи
+        socket_timeout=6,
     )
     name = os.environ.get("WORKER_NAME", "worker-1")
 
