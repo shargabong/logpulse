@@ -105,7 +105,6 @@ def test_empty_line():
     assert "пустая" in str(exc.value)
 
 
-# Отдельные маски (не менее трёх, у каждой свой тест)
 def test_ts_regex():
     assert TS_RE.fullmatch("2026-10-20T12:34:56Z")
     assert not TS_RE.fullmatch("2026-10-20 12:34:56")

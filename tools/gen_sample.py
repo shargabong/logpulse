@@ -42,7 +42,6 @@ def make_valid_line(index: int) -> str:
     return f"{ts} {level} {service} {ip} {method} {path} {status} {duration}ms rid={rid}"
 
 
-# Намеренно испорченные строки (6 штук).
 BROKEN = [
     "2026-13-45T99:99:99Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34",
     "2026-10-20T12:40:00Z INFO auth 999.1.1.1 POST /api/login 200 43ms rid=ab12cd35",
@@ -57,7 +56,6 @@ VALID_COUNT = 45
 
 def main() -> None:
     lines = [make_valid_line(i) for i in range(VALID_COUNT)]
-    # Вставляем испорченные строки ближе к концу файла.
     lines.extend(BROKEN)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")

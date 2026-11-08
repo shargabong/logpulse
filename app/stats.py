@@ -25,7 +25,6 @@ def update_stats(r, event):
     pipe.hincrby(SERVICE_KEY, event["service"], 1)
     pipe.hincrby(STATUS_KEY, str(event["status"]), 1)
     if event["duration_ms"] >= SLOW_MS:
-        # score = длительность, member = rid
         pipe.zadd(SLOW_KEY, {event["rid"]: event["duration_ms"]})
     pipe.execute()
 
@@ -38,7 +37,6 @@ def read_stats(r):
     slow = r.zrevrange(SLOW_KEY, 0, 4, withscores=True)
 
     return {
-        # total = сколько событий вообще обработал воркер (сумма счётчиков уровней)
         "total": sum(by_level.values()),
         "by_level": by_level,
         "by_service": by_service,

@@ -15,7 +15,6 @@ app = FastAPI(
 
 app.include_router(router)
 
-# Коды ошибок для единого формата ответа.
 ERROR_TYPES = {404: "not_found", 422: "validation_error", 503: "service_unavailable"}
 
 

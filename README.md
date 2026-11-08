@@ -2,7 +2,81 @@
 
 Система для приёма и разбора логов сервисов. Принимает строки логов по HTTP,
 проверяет их регулярками, валидные события кладёт в Redis Stream, отдельный
-воркер их читает и считает статистику. Всё запускается одним docker compose.
+воркер их читает и считает статистику.
+
+## Запуск (самое главное)
+
+Нужен только установленный Docker Desktop. Больше ничего настраивать не надо.
+
+1. Открыть терминал в папке проекта.
+2. Выполнить одну команду:
+
+```bash
+docker compose up --build -d
+```
+
+3. Открыть в браузере:
+
+- http://127.0.0.1:8000 - приложение
+- http://127.0.0.1:8000/docs - Swagger UI
+
+Готово. Всё работает.
+
+Остановить:
+
+```bash
+docker compose down
+```
+
+Проверить, что всё поднялось (три контейнера, у api и redis статус healthy):
+
+```bash
+docker compose ps
+```
+
+Если порт 8000 занят, поднять на 8080:
+
+Linux / macOS:
+
+```bash
+API_PORT=8080 docker compose up --build -d
+```
+
+Windows (PowerShell):
+
+```powershell
+$env:API_PORT="8080"; docker compose up --build -d
+```
+
+Важно: не использовать `docker compose down -v`, эта команда удаляет данные
+Redis (volume).
+
+## Проверка работы
+
+Здоровье и Redis:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Приём строки лога:
+
+```bash
+curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d "{\"lines\":[\"2026-10-20T12:34:56Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34\"]}"
+```
+
+Статистика и последние события:
+
+```bash
+curl http://127.0.0.1:8000/stats
+curl "http://127.0.0.1:8000/events?limit=3"
+```
+
+Полный прогон по тестовому файлу:
+
+```bash
+python tools/smoke.py
+```
 
 ## Как устроено
 
@@ -13,7 +87,7 @@ Redis (Hash + Sorted Set). API ещё сам читает готовую ста�
 
 Схема в редактируемом виде: architecture.drawio (открывается на https://app.diagrams.net/).
 
-## Файлы
+## Состав компонентов
 
 - app/parser.py - разбор строки логов регуляркой
 - app/routers.py - маршруты /health, /ingest, /stats, /events
@@ -22,66 +96,32 @@ Redis (Hash + Sorted Set). API ещё сам читает готовую ста�
 - app/redis_client.py - клиент Redis и зависимость для FastAPI
 - app/config.py - настройки и ключи
 - worker.py - фоновый воркер
-- data/sample.log - тестовые данные
+- data/sample.log - тестовые данные (45 корректных + 6 испорченных строк)
 - tests/ - тесты pytest
+- compose.yaml, Dockerfile - запуск в Docker
 
-## Запуск
+## Запуск без Docker
+
+Если Docker недоступен, можно запустить локально. Нужен Python 3.11+ и Redis
+на localhost:6379.
+
+Linux / macOS:
 
 ```bash
-cp .env.example .env
-docker compose up --build -d
-docker compose ps
-docker compose logs --tail=50 api worker redis
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/uvicorn app.main:app --reload      # терминал 1
+.venv/bin/python worker.py                   # терминал 2
 ```
 
-API: http://127.0.0.1:8000, Swagger: http://127.0.0.1:8000/docs
+Windows (PowerShell):
 
-Если порт 8000 занят, можно поднять на другом:
-
-```bash
-API_PORT=8080 docker compose up --build -d
-```
-
-Остановка (данные остаются в volume redis-data):
-
-```bash
-docker compose down
-```
-
-Команда `docker compose down -v` удаляет volume вместе с данными, для проверки
-сохранности её использовать нельзя.
-
-Без Docker:
-
-```bash
+```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements-dev.txt
-uvicorn app.main:app --reload      # терминал 1
-python worker.py                   # терминал 2
+.venv\Scripts\pip install -r requirements-dev.txt
+.venv\Scripts\uvicorn app.main:app --reload   # терминал 1
+.venv\Scripts\python worker.py                # терминал 2
 ```
-
-## Запросы
-
-Проверка:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Приём строк:
-
-```bash
-curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d "{\"lines\":[\"2026-10-20T12:34:56Z INFO auth 192.0.2.10 POST /api/login 200 43ms rid=ab12cd34\"]}"
-```
-
-Статистика и события:
-
-```bash
-curl http://127.0.0.1:8000/stats
-curl "http://127.0.0.1:8000/events?limit=3"
-```
-
-Полный прогон по sample.log: `python tools/smoke.py`.
 
 ## Что хранится в Redis
 

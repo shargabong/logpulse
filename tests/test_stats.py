@@ -64,6 +64,5 @@ def test_top_slow_sorted(fake_redis):
 
 
 def test_slow_threshold(fake_redis):
-    # 499 мс ниже порога 500 -> в рейтинг не попадает
     update_stats(fake_redis, make_event(duration_ms=499, rid="a0000001"))
     assert read_stats(fake_redis)["top_slow"] == []

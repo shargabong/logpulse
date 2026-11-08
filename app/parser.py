@@ -11,7 +11,7 @@ import ipaddress
 import re
 from datetime import datetime
 
-# Основная маска с именованными группами. Разбираем строку целиком (fullmatch).
+# Основная маска с именованными группами, разбор строки целиком (fullmatch).
 LOG_RE = re.compile(
     r"(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s+"
     r"(?P<level>INFO|WARN|ERROR)\s+"
@@ -60,7 +60,6 @@ def parse_line(line, line_no=None):
 
     d = m.groupdict()
 
-    # timestamp проверяем отдельной маской и datetime
     if not TS_RE.fullmatch(d["timestamp"]):
         raise ParseError("неверный timestamp: " + d["timestamp"], line_no)
     try:
@@ -68,7 +67,6 @@ def parse_line(line, line_no=None):
     except ValueError:
         raise ParseError("timestamp не корректная дата: " + d["timestamp"], line_no)
 
-    # IP проверяем через ipaddress, затем отдельной маской
     try:
         ipaddress.ip_address(d["ip"])
     except ValueError:

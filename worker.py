@@ -50,7 +50,7 @@ def main():
     try:
         r.xgroup_create(STREAM_KEY, GROUP_NAME, id="0", mkstream=True)
     except redis.ResponseError:
-        pass  # группа уже создана раньше
+        pass
 
     print("воркер запущен:", name)
 

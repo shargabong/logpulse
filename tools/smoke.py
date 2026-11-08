@@ -32,7 +32,6 @@ def main() -> None:
         print("POST /ingest ->", ingest.status_code)
         print(json.dumps(ingest.json(), ensure_ascii=False, indent=2))
 
-        # Небольшая пауза, чтобы воркер успел обработать поток.
         time.sleep(2.0)
 
         stats = client.get("/stats")

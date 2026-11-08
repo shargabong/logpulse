@@ -93,7 +93,6 @@ def test_stats_after_worker(client, fake_redis):
     assert data["total"] == 3
     assert data["by_level"]["INFO"] == 1
     assert data["by_status"]["503"] == 1
-    # валидная строка 2 длится 742 мс -> в рейтинге медленных
     assert data["top_slow"][0]["rid"] == "ee44cc22"
 
 
