@@ -91,11 +91,6 @@ Redis (Hash + Sorted Set). API ещё сам читает готовую ста�
 - tests/ - тесты pytest
 - compose.yaml, Dockerfile - запуск в Docker
 
-## Запуск без Docker
-
-Если Docker недоступен, можно запустить локально. Нужен Python 3.11+ и Redis
-на localhost:6379.
-
 Linux / macOS:
 
 ```bash
